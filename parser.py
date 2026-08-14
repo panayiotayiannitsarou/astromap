@@ -1,7 +1,7 @@
 import io, re
 import pdfplumber
 from models import Aspect, Chart, Point
-from astrology import SIGN_CODES, absolute, house_of, opposite_node, orb_weight
+from astrology import SIGN_CODES, absolute, house_of, opposite_node, orb_weight, south_node_aspects
 
 POINT_NAMES = {
     "A":"Ήλιος", "B":"Σελήνη", "C":"Ερμής", "D":"Αφροδίτη", "E":"Άρης", "F":"Δίας",
@@ -50,7 +50,13 @@ def _parse_positions(page):
         lm=LONG_RE.search(longitude)
         house_word=next((w for w in data if 184<w['x0']<207 and w['text'].isdigit()),None)
         if lm and house_word and code in POINT_NAMES:
-            points.append(_point(code,POINT_NAMES[code],sign_word['text'],*lm.groups(),house_word['text'],any(w['text']=='(' for w in ws),"node" if code=='L' else "planet"))
+            # In Astrodienst's embedded font the retrograde glyph is commonly
+            # extracted as '#'.  A negative daily-motion value on the data row
+            # is an independent confirmation.  '(' is a station marker and
+            # must not by itself turn a planet into retrograde.
+            negative_motion = any(w['text'] == '-' and 210 < w['x0'] < 250 for w in data)
+            retrograde = code not in ('L',) and (any(w['text'] == '#' for w in ws) or negative_motion)
+            points.append(_point(code,POINT_NAMES[code],sign_word['text'],*lm.groups(),house_word['text'],retrograde,"node" if code=='L' else "planet"))
         if cusp_sign:
             cusp_long=''.join(w['text'] for w in sorted(data,key=lambda z:z['x0']) if 460<w['x0']<510)
             cm=LONG_RE.search(cusp_long)
@@ -107,6 +113,8 @@ def parse_astrodienst_pdf(data: bytes, filename: str) -> Chart:
             south=opposite_node(node); south.house=house_of(south.absolute,cusps); points.append(south)
         by_code={p.code:p for p in points}
         aspects=_parse_aspect_grid(page,by_code)
+        if node:
+            aspects.extend(south_node_aspects(aspects))
         hard=[a for a in aspects if a.aspect in ("Τετράγωνο","Αντίθεση")]
         warnings=[]
         if not hard: warnings.append("Δεν αναγνωρίστηκε ο πίνακας δυναμικών όψεων· μην προχωρήσεις χωρίς χειροκίνητο έλεγχο.")

@@ -38,10 +38,40 @@ def orb_weight(orb: float) -> str:
     return "Πολύ πλατιά/δευτερεύουσα"
 
 def orb_to_text(orb: float) -> str:
-    total = round(abs(orb) * 3600)
-    d, rem = divmod(total, 3600)
-    m, s = divmod(rem, 60)
-    return f"{d}°{m:02d}′{s:02d}″"
+    # Astrodienst displays aspect orbs to the nearest arc minute.  Keep the
+    # same useful precision throughout the report instead of adding seconds.
+    total_minutes = round(abs(orb) * 60)
+    d, m = divmod(total_minutes, 60)
+    return f"{d}°{m:02d}′"
+
+def south_node_aspects(aspects: list[Aspect]) -> list[Aspect]:
+    """Derive South Node aspects from the Astrodienst True Node axis.
+
+    The South Node is exactly opposite the North Node.  Therefore only aspect
+    types that remain inside the supported major-aspect set are emitted.
+    """
+    opposite_map = {
+        "Σύνοδος": "Αντίθεση",
+        "Αντίθεση": "Σύνοδος",
+        "Τετράγωνο": "Τετράγωνο",
+        "Τρίγωνο": "Εξάγωνο",
+        "Εξάγωνο": "Τρίγωνο",
+    }
+    result = []
+    for aspect in aspects:
+        if "Βόρειος Δεσμός" not in (aspect.first, aspect.second):
+            continue
+        derived_type = opposite_map.get(aspect.aspect)
+        if not derived_type:
+            continue
+        other = aspect.second if aspect.first == "Βόρειος Δεσμός" else aspect.first
+        result.append(Aspect(
+            "Νότιος Δεσμός", other, derived_type, aspect.orb,
+            aspect.orb_text, aspect.weight,
+            "Μαθηματική παραγωγή από τον άξονα Βόρειου/Νότιου Δεσμού",
+            aspect.applying,
+        ))
+    return result
 
 def degree_theory(p: Point) -> str:
     if p.degree == 0:
@@ -56,4 +86,3 @@ def opposite_node(node: Point) -> Point:
     rem = value - si * 30
     degree = int(rem); minute = int((rem-degree)*60); second = round((((rem-degree)*60)-minute)*60)
     return Point("SN", "Νότιος Δεσμός", SIGNS[si], degree, minute, second, value, kind="node")
-

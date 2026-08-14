@@ -4,6 +4,7 @@ from parser import parse_astrodienst_pdf
 from prompts import build_master_prompt, fmt
 from docx_builder import build_audit_docx, build_analysis_docx
 from generator import generate_analysis
+from reference_loader import docx_text, load_default_references
 
 st.set_page_config(page_title="AstroCheck Pro", page_icon="✦", layout="wide")
 st.markdown("""<style>
@@ -12,6 +13,12 @@ st.markdown('<div class="hero"><h1>AstroCheck Pro</h1><p>Από το Astrodienst
 
 if 'chart' not in st.session_state: st.session_state.chart=None
 if 'analysis' not in st.session_state: st.session_state.analysis=''
+
+try:
+    default_instructions_text, default_style_text = load_default_references()
+except Exception as e:
+    st.error(f"Σφάλμα ενσωματωμένων αρχείων: {e}")
+    st.stop()
 
 with st.sidebar:
     st.header("Πρόοδος")
@@ -24,18 +31,23 @@ with st.sidebar:
 tab1,tab2,tab3,tab4,tab5=st.tabs(["1 · Αρχεία","2 · Έλεγχος","3 · Προσωπικό πλαίσιο","4 · Δημιουργία","5 · Λήψη Word"])
 
 with tab1:
-    st.subheader("Ανέβασε τα τρία αρχεία")
-    c1,c2,c3=st.columns(3)
-    with c1: pdf=st.file_uploader("Νέο Astrodienst Data Sheet",type=['pdf'],key='pdf')
-    with c2: instructions=st.file_uploader("Οδηγίες v3 — δεσμευτικές",type=['docx'],key='instructions')
-    with c3: style=st.file_uploader("Έλενα — μόνο πρότυπο ύφους",type=['docx'],key='style')
+    st.subheader("Ανέβασε μόνο το νέο PDF")
+    st.success("✓ Οι οδηγίες v4 και το πρότυπο της Έλενας είναι μόνιμα ενσωματωμένα.")
+    pdf=st.file_uploader("Νέο Astrodienst Data Sheet",type=['pdf'],key='pdf')
+    with st.expander("Προχωρημένα: προαιρετική προσωρινή αντικατάσταση"):
+        instructions=st.file_uploader("Νεότερες οδηγίες",type=['docx'],key='instructions')
+        style=st.file_uploader("Νεότερο πρότυπο ύφους",type=['docx'],key='style')
     if pdf and st.button("Ανάγνωση και έλεγχος PDF",type="primary",use_container_width=True):
         try:
             st.session_state.chart=parse_astrodienst_pdf(pdf.getvalue(),pdf.name)
             st.session_state.analysis=''
             st.success("Το PDF διαβάστηκε. Συνέχισε στην καρτέλα «2 · Έλεγχος».")
         except Exception as e: st.error(f"Η ανάγνωση σταμάτησε με ασφάλεια: {e}")
-    if not instructions or not style: st.info("Μπορείς να κάνεις τον μαθηματικό έλεγχο μόνο με το PDF. Για τελική ανάλυση χρειάζονται και τα δύο Word.")
+
+instructions_text = docx_text(instructions.getvalue()) if instructions else default_instructions_text
+style_text = docx_text(style.getvalue()) if style else default_style_text
+instructions_name = instructions.name if instructions else "Ενσωματωμένες οδηγίες v4"
+style_name = style.name if style else "Ενσωματωμένο πρότυπο Έλενας"
 
 chart=st.session_state.chart
 with tab2:
@@ -69,13 +81,13 @@ with tab3:
 personal={"Όνομα":name_override,"Επάγγελμα και σπουδές":profession,"Οικογενειακή κατάσταση":family,"Έργα/ενδιαφέροντα":projects,"Εργασιακές συνήθειες":habits,"Εμπειρίες":experiences}
 prompt=''
 if chart:
-    prompt=build_master_prompt(chart,personal,language,instructions.name if instructions else 'Οδηγίες v3',style.name if style else 'Πρότυπο Έλενας')
+    prompt=build_master_prompt(chart,personal,language,instructions_text,style_text,instructions_name,style_name)
 
 with tab4:
     st.subheader("Δημιουργία πλήρους ανάλυσης")
     if not chart: st.warning("Δεν υπάρχει ελεγμένος χάρτης.")
     else:
-        checklist={"12 ακμές":len(chart.cusps)==12,"Βόρειος Δεσμός":any(p.name=='Βόρειος Δεσμός' for p in chart.points),"Νότιος Δεσμός":any(p.name=='Νότιος Δεσμός' for p in chart.points),"Πίνακας όψεων":bool(chart.aspects),"Χειροκίνητη επιβεβαίωση":st.session_state.get('confirmed',False),"Οδηγίες v3":instructions is not None,"Πρότυπο Έλενας":style is not None}
+        checklist={"12 ακμές":len(chart.cusps)==12,"Βόρειος Δεσμός":any(p.name=='Βόρειος Δεσμός' for p in chart.points),"Νότιος Δεσμός":any(p.name=='Νότιος Δεσμός' for p in chart.points),"Πίνακας όψεων":bool(chart.aspects),"Χειροκίνητη επιβεβαίωση":st.session_state.get('confirmed',False),"Οδηγίες v4 μόνιμα ενσωματωμένες":bool(instructions_text),"Πρότυπο Έλενας μόνιμα ενσωματωμένο":bool(style_text)}
         st.dataframe(pd.DataFrame([{"Έλεγχος":k,"Κατάσταση":"✓" if v else "Λείπει"} for k,v in checklist.items()]),use_container_width=True,hide_index=True)
         with st.expander("Προεπισκόπηση πλήρους εντολής"): st.text_area("",prompt,height=320,label_visibility='collapsed')
         st.download_button("Λήψη πλήρους εντολής (.txt)",prompt,file_name="AstroCheck_Master_Prompt.txt",use_container_width=True)
@@ -97,4 +109,3 @@ with tab5:
         final_doc=build_analysis_docx(name_override or chart.name,st.session_state.analysis)
         st.download_button("Λήψη πλήρους ανάλυσης (Word)",final_doc,file_name="Pliris_Astrologiki_Analysi.docx",type="primary",use_container_width=True)
     else: st.info("Μετά την αυτόματη δημιουργία θα εμφανιστεί εδώ το τελικό Word.")
-
