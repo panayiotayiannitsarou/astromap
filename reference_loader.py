@@ -7,6 +7,8 @@ from docx import Document
 REFERENCE_DIR = Path(__file__).resolve().parent / "references"
 DEFAULT_INSTRUCTIONS = REFERENCE_DIR / "Odigies_v4.docx"
 DEFAULT_STYLE = REFERENCE_DIR / "Elena_style_example.docx"
+ROOT_INSTRUCTIONS = Path(__file__).resolve().parent / "Odigies_v4.docx"
+ROOT_STYLE = Path(__file__).resolve().parent / "Elena_style_example.docx"
 
 
 def docx_text(source) -> str:
@@ -24,6 +26,10 @@ def docx_text(source) -> str:
 
 
 def load_default_references() -> tuple[str, str]:
-    if not DEFAULT_INSTRUCTIONS.exists() or not DEFAULT_STYLE.exists():
+    # Accept both repository layouts: a dedicated references/ folder or the
+    # two DOCX files beside app.py.  This makes GitHub web uploads simpler.
+    instructions = DEFAULT_INSTRUCTIONS if DEFAULT_INSTRUCTIONS.exists() else ROOT_INSTRUCTIONS
+    style = DEFAULT_STYLE if DEFAULT_STYLE.exists() else ROOT_STYLE
+    if not instructions.exists() or not style.exists():
         raise FileNotFoundError("Λείπουν οι ενσωματωμένες οδηγίες v4 ή το πρότυπο ύφους.")
-    return docx_text(DEFAULT_INSTRUCTIONS), docx_text(DEFAULT_STYLE)
+    return docx_text(instructions), docx_text(style)
