@@ -55,7 +55,10 @@ def _parse_positions(page):
             # is an independent confirmation.  '(' is a station marker and
             # must not by itself turn a planet into retrograde.
             negative_motion = any(w['text'] == '-' and 210 < w['x0'] < 250 for w in data)
-            retrograde = code not in ('L',) and (any(w['text'] == '#' for w in ws) or negative_motion)
+            # The True Node is not a planet, but its signed daily motion still
+            # needs to be preserved.  It is described later as "retrograde
+            # movement", rather than as a retrograde planet.
+            retrograde = any(w['text'] == '#' for w in ws) or negative_motion
             points.append(_point(code,POINT_NAMES[code],sign_word['text'],*lm.groups(),house_word['text'],retrograde,"node" if code=='L' else "planet"))
         if cusp_sign:
             cusp_long=''.join(w['text'] for w in sorted(data,key=lambda z:z['x0']) if 460<w['x0']<510)

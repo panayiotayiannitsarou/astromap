@@ -6,17 +6,31 @@ def fmt(p):
 
 def ruler_block(chart, cusp):
     modern, traditional = RULERS[cusp.sign]
-    ruler = next((p for p in chart.points if p.name == modern), None)
-    trad = f" · παραδοσιακά {traditional}" if traditional else ""
-    if not ruler: return f"{modern}{trad} — δεν εντοπίστηκε στα δεδομένα"
-    aspects = [a for a in chart.aspects if ruler.name in (a.first,a.second)]
-    aspect_text = "; ".join(f"{a.first}–{a.second} {a.aspect}, orb {a.orb_text}, {a.weight}" for a in aspects) or "καμία επιβεβαιωμένη όψη"
-    return f"{modern}{trad}. Θέση: {fmt(ruler)}, {ruler.house}ος Οίκος. Όψεις κυβερνήτη: {aspect_text}"
+    def describe(name, label):
+        ruler = next((p for p in chart.points if p.name == name), None)
+        if not ruler:
+            return f"{label}: {name} — δεν εντοπίστηκε στα δεδομένα."
+        aspects = [a for a in chart.aspects if ruler.name in (a.first,a.second)]
+        aspect_text = "; ".join(
+            f"{a.first}–{a.second} {a.aspect}, orb {a.orb_text}, {a.weight}"
+            for a in aspects
+        ) or "καμία επιβεβαιωμένη όψη"
+        return (f"{label}: {name}. Θέση: {fmt(ruler)}, {ruler.house}ος Οίκος. "
+                f"Όψεις: {aspect_text}.")
+
+    blocks = [describe(modern, "Σύγχρονος/κύριος κυβερνήτης")]
+    if traditional and traditional != modern:
+        blocks.append(describe(traditional, "Παραδοσιακός κυβερνήτης"))
+    return "\n".join(blocks)
 
 def house_section(chart, number):
     cusp=chart.cusps[number-1]; nxt=chart.cusps[number%12]
     planets=[p for p in chart.points if p.house==number and p.kind in ("planet","node")]
+    modern_ruler, traditional_ruler = RULERS[cusp.sign]
     involved={p.name for p in planets}
+    involved.add(modern_ruler)
+    if traditional_ruler:
+        involved.add(traditional_ruler)
     aspects=[a for a in chart.aspects if a.first in involved or a.second in involved]
     hard=[a for a in aspects if a.aspect in ("Τετράγωνο","Αντίθεση")]
     other=[a for a in aspects if a not in hard]
@@ -35,7 +49,7 @@ def house_section(chart, number):
 {ruler_block(chart,cusp)}
 Πλανήτες κοντά σε επόμενη ακμή:
 {chr(10).join('- '+x for x in near) if near else '- Κανένας σε απόσταση έως 5°.'}
-ΥΠΟΧΡΕΩΤΙΚΑ τετράγωνα και αντιθέσεις:
+ΥΠΟΧΡΕΩΤΙΚΑ τετράγωνα και αντιθέσεις πλανητών και κυβερνητών:
 {alines(hard)}
 Άλλες επιβεβαιωμένες κύριες όψεις:
 {alines(other)}

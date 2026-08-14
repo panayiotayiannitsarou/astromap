@@ -5,6 +5,7 @@ from prompts import build_master_prompt, fmt
 from docx_builder import build_audit_docx, build_analysis_docx
 from generator import generate_analysis
 from reference_loader import docx_text, load_default_references
+from astrology import movement_text
 
 st.set_page_config(page_title="AstroCheck Pro", page_icon="✦", layout="wide")
 st.markdown("""<style>
@@ -61,7 +62,7 @@ with tab2:
         st.subheader("Βασικά στοιχεία")
         st.write({"Όνομα":chart.name,"Ημερομηνία":chart.date,"Ώρα":chart.time,"Τόπος":chart.place,"Σύστημα":chart.house_system})
         with st.expander("Πλανήτες και τεχνική τοποθέτηση σε Οίκους"):
-            st.dataframe(pd.DataFrame([{"Σημείο":p.name,"Θέση":fmt(p),"Οίκος":p.house,"Ανάδρομος":"Ναι" if p.retrograde else "Όχι"} for p in chart.points]),use_container_width=True,hide_index=True)
+            st.dataframe(pd.DataFrame([{"Σημείο":p.name,"Θέση":fmt(p),"Οίκος":p.house,"Κίνηση":movement_text(p)} for p in chart.points]),use_container_width=True,hide_index=True)
         st.subheader("Υποχρεωτικά τετράγωνα και αντιθέσεις")
         st.dataframe(pd.DataFrame([{"Ζεύγος":f"{x.first}–{x.second}","Όψη":x.aspect,"Orb":x.orb_text,"Βαρύτητα":x.weight,"Πηγή":x.source} for x in hard]),use_container_width=True,hide_index=True)
         confirm=st.checkbox("Επιβεβαίωσα οπτικά ότι οι γραμμές συμφωνούν με τον πίνακα Astrodienst",key='confirmed')

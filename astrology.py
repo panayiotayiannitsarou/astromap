@@ -85,4 +85,13 @@ def opposite_node(node: Point) -> Point:
     si = int(value // 30)
     rem = value - si * 30
     degree = int(rem); minute = int((rem-degree)*60); second = round((((rem-degree)*60)-minute)*60)
-    return Point("SN", "Νότιος Δεσμός", SIGNS[si], degree, minute, second, value, kind="node")
+    return Point("SN", "Νότιος Δεσμός", SIGNS[si], degree, minute, second, value,
+                 retrograde=node.retrograde, kind="node")
+
+def movement_text(point: Point) -> str:
+    """Human-readable movement without treating angles like planets."""
+    if point.kind in ("angle", "cusp"):
+        return "Δεν εφαρμόζεται"
+    if point.kind == "node":
+        return "Ανάδρομη κίνηση" if point.retrograde else "Ορθόδρομη κίνηση"
+    return "Ανάδρομος" if point.retrograde else "Ορθόδρομος"

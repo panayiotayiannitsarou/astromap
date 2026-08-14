@@ -6,6 +6,7 @@ from docx.enum.section import WD_SECTION
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from prompts import fmt
+from astrology import movement_text
 
 def _shade(cell, fill):
     tcPr=cell._tc.get_or_add_tcPr(); shd=OxmlElement('w:shd'); shd.set(qn('w:fill'),fill); tcPr.append(shd)
@@ -26,7 +27,7 @@ def build_audit_docx(chart, personal, prompt):
     t=d.add_table(rows=1,cols=4); t.style='Table Grid'
     for i,h in enumerate(['Σημείο','Θέση','Οίκος','Κίνηση']): t.rows[0].cells[i].text=h; _shade(t.rows[0].cells[i],'1D3A34'); t.rows[0].cells[i].paragraphs[0].runs[0].font.color.rgb=RGBColor(255,255,255)
     for pnt in chart.points:
-        c=t.add_row().cells; c[0].text=pnt.name; c[1].text=fmt(pnt); c[2].text=str(pnt.house or '—'); c[3].text='Ανάδρομος' if pnt.retrograde else 'Ορθόδρομος/—'
+        c=t.add_row().cells; c[0].text=pnt.name; c[1].text=fmt(pnt); c[2].text=str(pnt.house or '—'); c[3].text=movement_text(pnt)
     d.add_heading('Υποχρεωτικός έλεγχος τετραγώνων και αντιθέσεων',1)
     hard=[a for a in chart.aspects if a.aspect in ('Τετράγωνο','Αντίθεση')]
     t=d.add_table(rows=1,cols=4); t.style='Table Grid'
@@ -53,4 +54,3 @@ def build_analysis_docx(title_name, analysis):
         elif line[:3].rstrip('.').isdigit() and '. ' in line[:5]: d.add_paragraph(line.split('. ',1)[1],style='List Number')
         else: d.add_paragraph(line)
     bio=BytesIO(); d.save(bio); return bio.getvalue()
-
