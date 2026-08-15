@@ -31,6 +31,17 @@ def house_section(chart, number):
     involved.add(modern_ruler)
     if traditional_ruler:
         involved.add(traditional_ruler)
+    # Ο Οίκος 1 και ο Οίκος 7 μοιράζονται τον άξονα Ωροσκόπου/Δύσης· ο Οίκος 4
+    # και ο Οίκος 10 τον άξονα Πυθμένα Ουρανού/Μεσουρανήματος. Καμία όψη προς
+    # αυτά τα σημεία δεν πρέπει να εμφανίζεται ΜΟΝΟ στον Οίκο όπου τυχαίνει να
+    # βρίσκεται ο άλλος πλανήτης -- πρέπει να εμφανίζεται και εδώ, στον Οίκο
+    # που το ίδιο το σημείο ορίζει. (Έτσι διορθώνεται η περίπτωση Χείρωνα: η
+    # σύνοδός του με τον Ωροσκόπο πρέπει να αναλυθεί και στον 1ο και στον 7ο
+    # Οίκο, όχι μόνο στον 12ο όπου τυχαίνει να κατοικεί ο Χείρωνας.)
+    if number in (1, 7):
+        involved.add("Ωροσκόπος")
+    if number in (4, 10):
+        involved.add("Μεσουράνημα")
     aspects=[a for a in chart.aspects if a.first in involved or a.second in involved]
     hard=[a for a in aspects if a.aspect in ("Τετράγωνο","Αντίθεση")]
     other=[a for a in aspects if a not in hard]
