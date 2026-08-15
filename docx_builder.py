@@ -1,3 +1,4 @@
+import re
 from io import BytesIO
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
@@ -10,6 +11,25 @@ from astrology import movement_text
 
 def _shade(cell, fill):
     tcPr=cell._tc.get_or_add_tcPr(); shd=OxmlElement('w:shd'); shd.set(qn('w:fill'),fill); tcPr.append(shd)
+
+# Αναγνωρίζει **έντονα**, *πλάγια* και ***και τα δύο***· δεν πειράζει απλό
+# κείμενο χωρίς αστερίσκους. Χρησιμοποιείται αντί για αφαίρεση των αστερίσκων,
+# ώστε η έμφαση του μοντέλου να φτάνει πραγματικά στο Word.
+_INLINE_MD = re.compile(r"(\*\*\*.+?\*\*\*|\*\*.+?\*\*|\*.+?\*)")
+_NUMBERED_LIST = re.compile(r"^(\d+)\.\s+(.+)$")
+
+def _add_formatted_runs(paragraph, text):
+    for chunk in _INLINE_MD.split(text):
+        if not chunk:
+            continue
+        if chunk.startswith('***') and chunk.endswith('***') and len(chunk) > 6:
+            r = paragraph.add_run(chunk[3:-3]); r.bold = True; r.italic = True
+        elif chunk.startswith('**') and chunk.endswith('**') and len(chunk) > 4:
+            r = paragraph.add_run(chunk[2:-2]); r.bold = True
+        elif chunk.startswith('*') and chunk.endswith('*') and len(chunk) > 2:
+            r = paragraph.add_run(chunk[1:-1]); r.italic = True
+        else:
+            paragraph.add_run(chunk)
 
 def build_audit_docx(chart, personal, prompt):
     d=Document(); sec=d.sections[0]; sec.top_margin=Inches(.7); sec.bottom_margin=Inches(.7); sec.left_margin=Inches(.75); sec.right_margin=Inches(.75)
@@ -47,10 +67,12 @@ def build_analysis_docx(title_name, analysis):
     for raw in analysis.splitlines():
         line=raw.strip()
         if not line: d.add_paragraph(); continue
-        if line.startswith('### '): d.add_heading(line[4:],3)
-        elif line.startswith('## '): d.add_heading(line[3:],2)
-        elif line.startswith('# '): d.add_heading(line[2:],1)
-        elif line.startswith(('- ','• ')): d.add_paragraph(line[2:],style='List Bullet')
-        elif line[:3].rstrip('.').isdigit() and '. ' in line[:5]: d.add_paragraph(line.split('. ',1)[1],style='List Number')
-        else: d.add_paragraph(line)
+        if line.startswith('### '): _add_formatted_runs(d.add_heading('',3), line[4:])
+        elif line.startswith('## '): _add_formatted_runs(d.add_heading('',2), line[3:])
+        elif line.startswith('# '): _add_formatted_runs(d.add_heading('',1), line[2:])
+        elif line.startswith(('- ','• ')): _add_formatted_runs(d.add_paragraph(style='List Bullet'), line[2:])
+        else:
+            m = _NUMBERED_LIST.match(line)
+            if m: _add_formatted_runs(d.add_paragraph(style='List Number'), m.group(2))
+            else: _add_formatted_runs(d.add_paragraph(), line)
     bio=BytesIO(); d.save(bio); return bio.getvalue()

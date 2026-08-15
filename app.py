@@ -6,6 +6,7 @@ from docx_builder import build_audit_docx, build_analysis_docx
 from generator import generate_analysis
 from reference_loader import docx_text, load_default_references
 from astrology import movement_text
+from validator import validate_analysis
 
 st.set_page_config(page_title="AstroCheck Pro", page_icon="✦", layout="wide")
 st.markdown("""<style>
@@ -14,6 +15,7 @@ st.markdown('<div class="hero"><h1>AstroCheck Pro</h1><p>Από το Astrodienst
 
 if 'chart' not in st.session_state: st.session_state.chart=None
 if 'analysis' not in st.session_state: st.session_state.analysis=''
+if 'validation' not in st.session_state: st.session_state.validation=None
 
 try:
     default_instructions_text, default_style_text = load_default_references()
@@ -96,9 +98,28 @@ with tab4:
         ready=all(checklist.values())
         if st.button("Δημιουργία πλήρους ανάλυσης",type="primary",disabled=not ready or not api,use_container_width=True):
             with st.spinner("Δημιουργείται η ανάλυση των 12 Οίκων…"):
-                try: st.session_state.analysis=generate_analysis(api,prompt); st.success("Η ανάλυση δημιουργήθηκε. Πήγαινε στην καρτέλα 5.")
+                try:
+                    text=generate_analysis(api,prompt)
+                    st.session_state.analysis=text
+                    st.session_state.validation=validate_analysis(chart,text)
+                    if st.session_state.validation.ok:
+                        st.success("Η ανάλυση δημιουργήθηκε και πέρασε τον έλεγχο πληρότητας. Πήγαινε στην καρτέλα 5.")
+                    else:
+                        st.error(st.session_state.validation.summary()+" Δες λεπτομέρειες στην καρτέλα 5. Η λήψη του Word παραμένει κλειδωμένη.")
                 except Exception as e: st.error(f"Η δημιουργία απέτυχε: {e}")
         if not ready: st.warning("Η αυτόματη δημιουργία παραμένει κλειδωμένη μέχρι να ολοκληρωθούν όλοι οι έλεγχοι.")
+
+        st.divider()
+        st.subheader("Ή: επικόλλησε ανάλυση που πήρες χειροκίνητα (π.χ. από ChatGPT)")
+        st.caption("Κατέβασες την πλήρη εντολή παραπάνω, τη χρησιμοποίησες αλλού, και έχεις το κείμενο; Επικόλλησέ το εδώ για τον ΙΔΙΟ αυτόματο έλεγχο πληρότητας πριν φτιαχτεί το Word.")
+        pasted=st.text_area("Επικολλημένη ανάλυση",height=200,key='pasted_analysis')
+        if st.button("Έλεγχος πληρότητας επικολλημένου κειμένου",use_container_width=True,disabled=not pasted):
+            st.session_state.analysis=pasted
+            st.session_state.validation=validate_analysis(chart,pasted)
+            if st.session_state.validation.ok:
+                st.success("Πέρασε τον έλεγχο πληρότητας. Πήγαινε στην καρτέλα 5.")
+            else:
+                st.error(st.session_state.validation.summary()+" Δες λεπτομέρειες στην καρτέλα 5.")
 
 with tab5:
     st.subheader("Λήψη αρχείων")
@@ -107,6 +128,17 @@ with tab5:
         st.download_button("Λήψη δελτίου ελέγχου και πλήρους εντολής (Word)",audit,file_name="AstroCheck_Elegxos_kai_Odigies.docx",use_container_width=True)
     if st.session_state.analysis:
         st.text_area("Προεπισκόπηση ανάλυσης",st.session_state.analysis,height=420)
-        final_doc=build_analysis_docx(name_override or chart.name,st.session_state.analysis)
-        st.download_button("Λήψη πλήρους ανάλυσης (Word)",final_doc,file_name="Pliris_Astrologiki_Analysi.docx",type="primary",use_container_width=True)
-    else: st.info("Μετά την αυτόματη δημιουργία θα εμφανιστεί εδώ το τελικό Word.")
+        validation=st.session_state.validation
+        if validation is None:
+            validation=validate_analysis(chart,st.session_state.analysis)
+            st.session_state.validation=validation
+        if validation.ok:
+            st.markdown(f'<div class="ok">{validation.summary()}</div>',unsafe_allow_html=True)
+            final_doc=build_analysis_docx(name_override or chart.name,st.session_state.analysis)
+            st.download_button("Λήψη πλήρους ανάλυσης (Word)",final_doc,file_name="Pliris_Astrologiki_Analysi.docx",type="primary",use_container_width=True)
+        else:
+            st.markdown(f'<div class="warn">⚠ {validation.summary()}</div>',unsafe_allow_html=True)
+            with st.expander("Λεπτομέρειες ελέγχου πληρότητας",expanded=True):
+                for line in validation.details_lines(): st.write("•",line)
+            st.button("Λήψη πλήρους ανάλυσης (Word) — κλειδωμένο μέχρι να διορθωθεί η ανάλυση",disabled=True,use_container_width=True)
+    else: st.info("Μετά την αυτόματη δημιουργία (ή τον χειροκίνητο έλεγχο επικολλημένου κειμένου στην καρτέλα 4) θα εμφανιστεί εδώ το τελικό Word.")

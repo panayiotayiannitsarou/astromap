@@ -1,4 +1,4 @@
-from astrology import RULERS, angular_distance, degree_theory, orb_to_text
+from astrology import RULERS, angular_distance, axis_activation_note, degree_theory, orb_to_text
 
 def fmt(p):
     rx = " ανάδρομος" if p.retrograde else ""
@@ -40,7 +40,13 @@ def house_section(chart, number):
         if distance <= 5:
             near.append(f"{p.name}: τεχνικά στον {number}ο, απόσταση {orb_to_text(distance)} από την επόμενη ακμή· μπορεί συμπληρωματικά να επηρεάζει τον {number%12+1}ο.")
     plist="\n".join(f"- {p.name}: {fmt(p)} · {degree_theory(p)}" for p in planets) or "- Κανένας πλανήτης."
-    def alines(items): return "\n".join(f"- {a.first}–{a.second}: {a.aspect}, orb {a.orb_text}, {a.weight}, πηγή: {a.source}" for a in items) or "- Καμία."
+    def alines(items):
+        lines = []
+        for a in items:
+            note = axis_activation_note(a)
+            suffix = f" [{note}]" if note else ""
+            lines.append(f"- {a.first}–{a.second}: {a.aspect}, orb {a.orb_text}, {a.weight}, πηγή: {a.source}{suffix}")
+        return "\n".join(lines) or "- Καμία."
     return f"""{number}ος ΟΙΚΟΣ
 Ακμή και έκταση: {fmt(cusp)} → {fmt(nxt)}.
 Πλανήτες/σημεία:
@@ -83,6 +89,7 @@ def build_master_prompt(chart, personal, language, instructions_text, style_text
 4. Χρησιμοποίησε προσεκτική, πιθανική, μη μοιρολατρική και μη διαγνωστική γλώσσα.
 5. Η Θεωρία των Μοιρών είναι μόνο συμπληρωματική και ακολουθεί ζώδιο, Οίκο, όψεις και κυβερνήτη.
 6. Κάθε Οίκος να είναι συνεχές συνθετικό κείμενο και όχι ασύνδετη λίστα.
+7. Όταν μια όψη αφορά τον Ωροσκόπο ή το Μεσουράνημα και έχει σημείωση σε αγκύλες [...], ενσωμάτωσε τη σημασία της -- ότι ενεργοποιείται ταυτόχρονα το απέναντι σημείο του άξονα (Δύση/Πυθμένας Ουρανού). ΜΗΝ τη γράψεις ως δεύτερη, ανεξάρτητη όψη με δικό της orb· είναι η ίδια όψη, από την άλλη άκρη του άξονα.
 
 ΕΛΕΓΜΕΝΑ ΔΕΔΟΜΕΝΑ ΑΝΑ ΟΙΚΟ
 {houses}

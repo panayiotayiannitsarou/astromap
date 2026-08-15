@@ -99,15 +99,37 @@ def _parse_aspect_grid(page, points_by_code):
             result.append(Aspect(points_by_code[col_codes[idx]].name, points_by_code[row_code].name, ASPECT_GLYPHS[g["text"]], orb, f"{int(mo.group(2))}°{int(mo.group(3)):02d}′", orb_weight(orb), "Πίνακας Astrodienst", mo.group(4)=="a"))
     return result
 
+# Οι 10 βασικοί πλανήτες που πρέπει να υπάρχουν σε κάθε έγκυρο data sheet.
+# Δεσμός (L) και Χείρωνας (N) ελέγχονται ξεχωριστά, με πιο συγκεκριμένο μήνυμα.
+_REQUIRED_CORE_CODES = ["A","B","C","D","E","F","G","O","I","J"]
+
 def parse_astrodienst_pdf(data: bytes, filename: str) -> Chart:
     with pdfplumber.open(io.BytesIO(data)) as pdf:
         page=pdf.pages[0]; text=page.extract_text(layout=True) or ""
         name,date,time,place,method=_metadata(text, filename)
         points,cusps=_parse_positions(page)
-        if len(cusps) < 12:
-            raise ValueError(f"Αναγνωρίστηκαν μόνο {len(cusps)} από τις 12 ακμές. Χρειάζεται Astrodienst Natal Chart (Data Sheet).")
-        if len(points)<10: raise ValueError(f"Αναγνωρίστηκαν μόνο {len(points)} πλανήτες/σημεία.")
-        for p in points: p.house=house_of(p.absolute,cusps)
+        if len(cusps) != 12:
+            raise ValueError(f"Αναγνωρίστηκαν {len(cusps)} ακμές αντί για 12. Χρειάζεται Astrodienst Natal Chart (Data Sheet).")
+        found_codes = {p.code for p in points}
+        missing_core = [f"{code} ({POINT_NAMES[code]})" for code in _REQUIRED_CORE_CODES if code not in found_codes]
+        if missing_core:
+            raise ValueError("Δεν αναγνωρίστηκαν οι βασικοί πλανήτες: " + ", ".join(missing_core) +
+                              ". Η μορφή του PDF μπορεί να έχει αλλάξει -- χρειάζεται χειροκίνητος έλεγχος.")
+        if "L" not in found_codes:
+            raise ValueError("Δεν αναγνωρίστηκε ο Βόρειος Δεσμός (True Node, κωδικός L).")
+        if "N" not in found_codes:
+            raise ValueError("Δεν αναγνωρίστηκε ο Χείρωνας (κωδικός N).")
+        for p in points + cusps:
+            if not (0 <= p.degree <= 29 and 0 <= p.minute <= 59 and 0 <= p.second <= 59):
+                raise ValueError(f"Μη έγκυρη μοίρα για {p.name}: {p.degree}°{p.minute}′{p.second}″. Πιθανό σφάλμα ανάγνωσης του PDF.")
+        warnings=[]
+        for p in points:
+            computed_house = house_of(p.absolute, cusps)
+            if p.house is not None and not (1 <= p.house <= 12):
+                raise ValueError(f"Μη έγκυρος Οίκος στο φύλλο δεδομένων για {p.name}: {p.house}.")
+            if p.house is not None and p.house != computed_house:
+                warnings.append(f"{p.name}: το φύλλο δεδομένων αναφέρει Οίκο {p.house}, ο μαθηματικός υπολογισμός δίνει Οίκο {computed_house}. Χρειάζεται χειροκίνητος έλεγχος πριν προχωρήσεις.")
+            p.house = computed_house
         asc=Point("Q","Ωροσκόπος",cusps[0].sign,cusps[0].degree,cusps[0].minute,cusps[0].second,cusps[0].absolute,kind="angle")
         mc=Point("T","Μεσουράνημα",cusps[9].sign,cusps[9].degree,cusps[9].minute,cusps[9].second,cusps[9].absolute,kind="angle")
         points.extend([asc,mc])
@@ -119,6 +141,5 @@ def parse_astrodienst_pdf(data: bytes, filename: str) -> Chart:
         if node:
             aspects.extend(south_node_aspects(aspects))
         hard=[a for a in aspects if a.aspect in ("Τετράγωνο","Αντίθεση")]
-        warnings=[]
         if not hard: warnings.append("Δεν αναγνωρίστηκε ο πίνακας δυναμικών όψεων· μην προχωρήσεις χωρίς χειροκίνητο έλεγχο.")
         return Chart(name,date,time,place,method,points,cusps,aspects,warnings)
