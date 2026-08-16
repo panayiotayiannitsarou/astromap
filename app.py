@@ -16,6 +16,8 @@ st.markdown('<div class="hero"><h1>AstroCheck Pro</h1><p>Από το Astrodienst
 if 'chart' not in st.session_state: st.session_state.chart=None
 if 'analysis' not in st.session_state: st.session_state.analysis=''
 if 'validation' not in st.session_state: st.session_state.validation=None
+if 'analysis_docx_bytes' not in st.session_state: st.session_state.analysis_docx_bytes=None
+if 'analysis_docx_name' not in st.session_state: st.session_state.analysis_docx_name=''
 if 'uploader_gen' not in st.session_state: st.session_state.uploader_gen=0  # αλλάζει τα keys των uploaders ώστε το "Νέα ανάλυση" να τους αδειάζει πραγματικά
 
 try:
@@ -55,6 +57,8 @@ with st.sidebar:
         st.session_state.chart = None
         st.session_state.analysis = ''
         st.session_state.validation = None
+        st.session_state.analysis_docx_bytes = None
+        st.session_state.analysis_docx_name = ''
         st.session_state.uploader_gen += 1  # αναγκάζει τους file_uploader να ξαναγίνουν "άδειοι"
         for k in ('confirmed', 'profession', 'family', 'projects', 'habits', 'experiences', 'pasted_analysis'):
             st.session_state.pop(k, None)
@@ -160,6 +164,8 @@ with tab4:
                         try:
                             text=generate_analysis(api,prompt)
                             st.session_state.analysis=text
+                            st.session_state.analysis_docx_bytes=None
+                            st.session_state.analysis_docx_name=''
                             st.session_state.validation=validate_analysis(chart,text)
                             if st.session_state.validation.ok:
                                 st.success("✓ Πέρασε τον έλεγχο πληρότητας. Πήγαινε στην καρτέλα 5 →")
@@ -174,10 +180,34 @@ with tab4:
         with col_manual:
             with st.container(border=True):
                 st.markdown("#### 📋 Χειροκίνητη διαδρομή")
-                st.caption("Κατέβασε την εντολή (.txt) παραπάνω, χρησιμοποίησέ την σε ChatGPT/Claude, και επικόλλησε το αποτέλεσμα εδώ.")
+                st.caption("Χρησιμοποίησε την εντολή σε ChatGPT/Claude και ανέβασε εδώ το τελικό Word. Η παράδοση παραμένει κλειδωμένη μέχρι να περάσει τον validator.")
+                uploaded_analysis=st.file_uploader(
+                    "Τελική ανάλυση από ChatGPT/Claude (.docx)",
+                    type=['docx'],
+                    key=f"analysis_docx_{st.session_state.uploader_gen}",
+                )
+                if st.button("Υποχρεωτικός έλεγχος τελικού Word",use_container_width=True,disabled=not uploaded_analysis):
+                    try:
+                        uploaded_bytes=uploaded_analysis.getvalue()
+                        extracted=docx_text(uploaded_bytes)
+                        st.session_state.analysis=extracted
+                        st.session_state.analysis_docx_bytes=uploaded_bytes
+                        st.session_state.analysis_docx_name=uploaded_analysis.name
+                        st.session_state.validation=validate_analysis(chart,extracted)
+                        if st.session_state.validation.ok:
+                            st.success("✓ Το τελικό Word πέρασε τον αυστηρό έλεγχο. Πήγαινε στην καρτέλα 5 →")
+                        else:
+                            st.error(st.session_state.validation.summary()+" Το Word απορρίφθηκε και η λήψη παραμένει κλειδωμένη.")
+                    except Exception as e:
+                        st.error("Δεν ήταν δυνατή η ανάγνωση του Word.")
+                        with st.expander("Τεχνική λεπτομέρεια"): st.code(str(e))
+                st.divider()
+                st.caption("Εναλλακτικά, μπορείς να επικολλήσεις το πλήρες κείμενο.")
                 pasted=st.text_area("Επικολλημένη ανάλυση",height=150,key='pasted_analysis',label_visibility='collapsed',placeholder="Επικόλλησε εδώ το πλήρες κείμενο της ανάλυσης…")
                 if st.button("Έλεγχος πληρότητας επικολλημένου κειμένου",use_container_width=True,disabled=not pasted):
                     st.session_state.analysis=pasted
+                    st.session_state.analysis_docx_bytes=None
+                    st.session_state.analysis_docx_name=''
                     st.session_state.validation=validate_analysis(chart,pasted)
                     if st.session_state.validation.ok:
                         st.success("✓ Πέρασε τον έλεγχο πληρότητας. Πήγαινε στην καρτέλα 5 →")
@@ -199,8 +229,14 @@ with tab5:
         st.subheader("Μηχανικός έλεγχος πληρότητας")
         if validation.ok:
             st.markdown(f'<div class="ok">{validation.summary()}</div>',unsafe_allow_html=True)
-            final_doc=build_analysis_docx(name_override or chart.name,st.session_state.analysis)
-            st.download_button("⬇️ Λήψη πλήρους ανάλυσης (Word)",final_doc,file_name="Pliris_Astrologiki_Analysi.docx",type="primary",use_container_width=True)
+            original_docx=st.session_state.get('analysis_docx_bytes')
+            if original_docx:
+                final_doc=original_docx
+                final_name=st.session_state.get('analysis_docx_name') or "Pliris_Astrologiki_Analysi.docx"
+            else:
+                final_doc=build_analysis_docx(name_override or chart.name,st.session_state.analysis)
+                final_name="Pliris_Astrologiki_Analysi.docx"
+            st.download_button("⬇️ Λήψη ελεγμένης πλήρους ανάλυσης (Word)",final_doc,file_name=final_name,type="primary",use_container_width=True)
         else:
             st.markdown(f'<div class="warn">⚠ {validation.summary()}</div>',unsafe_allow_html=True)
             with st.expander("Λεπτομέρειες ελέγχου πληρότητας",expanded=True):
