@@ -1,7 +1,0 @@
-.venv/
-__pycache__/
-*.pyc
-*.docx
-!Odigies_v4.docx
-!Elena_style_example.docx
-.streamlit/secrets.toml
