@@ -57,7 +57,7 @@ _NAME_FORMS = {
     "Νότιος Δεσμός": r"Νότι(?:ος|ο|ου)\s+Δεσμ(?:ός|ό|ού)",
     "Χείρωνας": r"Χείρων(?:ας|α)",
     "Ωροσκόπος": r"Ωροσκόπ(?:ος|ο|ου)",
-    "Μεσουράνημα": r"Μεσουράν(?:ημα|ηματος)",
+    "Μεσουράνημα": r"Μεσουρ(?:άνημα|ανήματος)",
 }
 
 _ASPECT_FORMS = {
@@ -85,8 +85,19 @@ _HOUSE_PATTERNS = [
 _HOUSE_PATTERNS_ALT = [
     re.compile(rf"Ο[ιί]κ\w*\s+{n}\b") for n in range(1, 13)
 ]
+_HOUSE_HEADING_PATTERNS = [
+    re.compile(rf"(?im)^\s*(?:#{{1,3}}\s*)?{n}ος\s+Ο[ιί]κ\w*\b")
+    for n in range(1, 13)
+]
 
 _WINDOW = 350  # χαρακτήρες γύρω από κάθε εμφάνιση ονόματος, για αναζήτηση ταιριάσματος
+
+_SECTION_PATTERNS = {
+    "Τελική συνθετική εικόνα": r"Τελική\s+συνθετική\s+εικόνα",
+    "Συμβολική κατεύθυνση εξέλιξης": r"Συμβολική\s+κατεύθυνση\s+εξέλιξης",
+    "Προτάσεις προσωπικής ανάπτυξης": r"Προτάσεις\s+προσωπικής\s+ανάπτυξης",
+    "Παράρτημα επιβεβαιωμένων όψεων": r"Παράρτημα[^\r\n]{0,90}επιβεβαιωμέν\w*[^\r\n]{0,40}όψε(?:ων|ις)",
+}
 
 
 @dataclass
@@ -210,6 +221,90 @@ def _contradicts_aspect(text: str, aspect) -> tuple[bool, bool]:
     return wrong_type, wrong_weight
 
 
+def _matched_labels(fragment: str, forms: dict[str, str]) -> list[tuple[str, int, int]]:
+    """Επιστρέφει όλους τους αναγνωρισμένους χαρακτηρισμούς και τις θέσεις τους."""
+    matches = []
+    for label, pattern in forms.items():
+        for match in re.finditer(pattern, fragment, re.IGNORECASE):
+            matches.append((label, match.start(), match.end()))
+    return sorted(matches, key=lambda item: item[1])
+
+
+def _is_mirrored_axis_type(fragment: str, start: int) -> bool:
+    """Αληθές όταν ο τύπος όψης δηλώνει τη συμπληρωματική όψη άξονα.
+
+    Παράδειγμα: «Τρίγωνο Σελήνης–Μεσουρανήματος … ενεργοποιεί,
+    ως εξάγωνο, τον Πυθμένα Ουρανού». Το «ως εξάγωνο» δεν είναι ο τύπος
+    της κύριας όψης και δεν πρέπει να την ακυρώνει στον αυστηρό έλεγχο.
+    """
+    before = fragment[max(0, start - 18):start]
+    return bool(re.search(r"\bως\s*$", before, re.IGNORECASE))
+
+
+def _strict_occurrence_errors(text: str, aspect) -> tuple[bool, bool]:
+    """Δένει αυστηρά ΖΕΥΓΟΣ → ΤΥΠΟ → ORB → ΚΑΤΗΓΟΡΙΑ.
+
+    Ο προηγούμενος έλεγχος αρκούνταν στην παρουσία της σωστής λέξης κάπου
+    κοντά στο ζεύγος. Έτσι η φράση «κανονικό τετράγωνο … (orb 3°35′,
+    Στενή/ισχυρή)» περνούσε, επειδή έβρισκε το «κανονικό» πριν από το ζεύγος.
+    Εδώ, όταν υπάρχει ρητή κατηγορία αμέσως μετά από το συγκεκριμένο orb,
+    αυτή έχει προτεραιότητα και πρέπει να συμφωνεί ακριβώς με το registry.
+    """
+    pa, pb = _name_pattern(aspect.first), _name_pattern(aspect.second)
+    joined = rf"(?:{pa}\s*[–—-]\s*{pb}|{pb}\s*[–—-]\s*{pa})"
+    wrong_type = False
+    wrong_weight = False
+
+    for unit in re.split(r"[\r\n]+", text):
+        for pair in re.finditer(joined, unit, re.IGNORECASE):
+            start = max(0, pair.start() - 90)
+            end = min(len(unit), pair.end() + 220)
+            fragment = unit[start:end]
+            pair_start = pair.start() - start
+            pair_end = pair.end() - start
+
+            orb_matches = list(re.finditer(re.escape(aspect.orb_text), fragment))
+            if not orb_matches:
+                continue
+            orb = min(
+                orb_matches,
+                key=lambda match: min(abs(match.start() - pair_end), abs(match.end() - pair_start)),
+            )
+
+            # Ο τύπος μπορεί να προηγείται («κανονικό τετράγωνο Α–Β») ή να
+            # ακολουθεί σε πίνακα («Α–Β | Τετράγωνο | orb …»). Επιλέγουμε τον
+            # πλησιέστερο ρητό τύπο στο ζεύγος.
+            type_labels = [
+                item for item in _matched_labels(fragment, _ASPECT_FORMS)
+                if not _is_mirrored_axis_type(fragment, item[1])
+            ]
+            if type_labels:
+                nearest_type = min(
+                    type_labels,
+                    key=lambda item: min(abs(item[1] - pair_end), abs(item[2] - pair_start)),
+                )[0]
+                if nearest_type != aspect.aspect:
+                    wrong_type = True
+
+            # Αν υπάρχει κατηγορία μετά από το συγκεκριμένο orb, είναι η
+            # κατηγορία που δηλώνεται ρητά για αυτό το orb και υπερισχύει από
+            # οποιοδήποτε επίθετο πριν από το ζεύγος.
+            after_orb = fragment[orb.end():orb.end() + 95]
+            after_labels = _matched_labels(after_orb, _WEIGHT_FORMS)
+            if after_labels:
+                declared_weight = after_labels[0][0]
+            else:
+                all_weights = _matched_labels(fragment, _WEIGHT_FORMS)
+                declared_weight = min(
+                    all_weights,
+                    key=lambda item: min(abs(item[1] - orb.end()), abs(item[2] - orb.start())),
+                )[0] if all_weights else None
+            if declared_weight is not None and declared_weight != aspect.weight:
+                wrong_weight = True
+
+    return wrong_type, wrong_weight
+
+
 def _house_segments(text: str) -> dict[int, str]:
     """Εντοπίζει το τμήμα κειμένου κάθε Οίκου (από την επικεφαλίδα του μέχρι
     την επόμενη), με αναζήτηση με σειρά 1..12 ώστε να μην μπερδεύονται
@@ -217,7 +312,9 @@ def _house_segments(text: str) -> dict[int, str]:
     starts = {}
     cursor = 0
     for n in range(1, 13):
-        m = _HOUSE_PATTERNS[n - 1].search(text, cursor) or _HOUSE_PATTERNS_ALT[n - 1].search(text, cursor)
+        m = _HOUSE_HEADING_PATTERNS[n - 1].search(text, cursor)
+        if not m:
+            m = _HOUSE_PATTERNS[n - 1].search(text, cursor) or _HOUSE_PATTERNS_ALT[n - 1].search(text, cursor)
         if not m:
             continue
         starts[n] = m.start()
@@ -294,7 +391,10 @@ def validate_analysis(chart, analysis_text: str) -> ValidationResult:
             if not (co_occurs and orb_ok and type_ok and weight_ok):
                 missing_from_appendix.append(a)
 
-    missing_sections = [s for s in REQUIRED_SECTIONS if s not in text]
+    missing_sections = [
+        section for section in REQUIRED_SECTIONS
+        if not re.search(_SECTION_PATTERNS[section], text, re.IGNORECASE)
+    ]
 
     # v2: έλεγχος ανά Οίκο (κανόνας 6Β) -- κάθε mandatory όψη πρέπει να
     # εμφανίζεται ΜΕΣΑ στο τμήμα κειμένου κάθε Οίκου όπου εμπλέκεται
@@ -320,6 +420,9 @@ def validate_analysis(chart, analysis_text: str) -> ValidationResult:
     # λάθος κατηγορία σε σύνοδο Ήλιου–Άρη ή λάθος τύπος σε τελική σύνθεση.
     for a in chart.aspects:
         bad_type, bad_weight = _contradicts_aspect(text, a)
+        strict_bad_type, strict_bad_weight = _strict_occurrence_errors(text, a)
+        bad_type = bad_type or strict_bad_type
+        bad_weight = bad_weight or strict_bad_weight
         if bad_type and a not in wrong_aspect_type:
             wrong_aspect_type.append(a)
         if bad_weight and a not in wrong_weight:
