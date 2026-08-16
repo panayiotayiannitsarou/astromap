@@ -39,6 +39,43 @@ REQUIRED_SECTIONS = [
     "Παράρτημα επιβεβαιωμένων όψεων",
 ]
 
+# Κανονικοποίηση των συνηθέστερων ελληνικών πτώσεων. Ο παλιός validator
+# έψαχνε μόνο την ονομαστική (π.χ. «Πλούτωνας») και απέρριπτε σωστές φράσεις
+# όπως «με τον Πλούτωνα» ή «του Κρόνου».
+_NAME_FORMS = {
+    "Ήλιος": r"Ήλι(?:ος|ο|ου)",
+    "Σελήνη": r"Σελήν(?:η|ης)",
+    "Ερμής": r"Ερμ(?:ής|ή)",
+    "Αφροδίτη": r"Αφροδίτ(?:η|ης)",
+    "Άρης": r"Άρ(?:ης|η)",
+    "Δίας": r"Δί(?:ας|α)",
+    "Κρόνος": r"Κρόν(?:ος|ο|ου)",
+    "Ουρανός": r"Ουραν(?:ός|ό|ού)",
+    "Ποσειδώνας": r"Ποσειδών(?:ας|α)",
+    "Πλούτωνας": r"Πλούτων(?:ας|α)",
+    "Βόρειος Δεσμός": r"Βόρει(?:ος|ο|ου)\s+Δεσμ(?:ός|ό|ού)",
+    "Νότιος Δεσμός": r"Νότι(?:ος|ο|ου)\s+Δεσμ(?:ός|ό|ού)",
+    "Χείρωνας": r"Χείρων(?:ας|α)",
+    "Ωροσκόπος": r"Ωροσκόπ(?:ος|ο|ου)",
+    "Μεσουράνημα": r"Μεσουράν(?:ημα|ηματος)",
+}
+
+_ASPECT_FORMS = {
+    "Σύνοδος": r"σύνοδ(?:ος|ο|ου)",
+    "Εξάγωνο": r"εξάγων(?:ο|ου)",
+    "Τετράγωνο": r"τετράγων(?:ο|ου)",
+    "Τρίγωνο": r"τρίγων(?:ο|ου)",
+    "Αντίθεση": r"αντίθεσ(?:η|ης)",
+    "Χιαστί όψη 150°": r"χιαστί(?:\s+όψη)?(?:\s+150°)?",
+}
+
+_WEIGHT_FORMS = {
+    "Στενή/ισχυρή": r"στεν(?:ή|ό)\s*/\s*ισχυρ(?:ή|ό)",
+    "Κανονική": r"κανονικ(?:ή|ό)",
+    "Πλατιά αλλά έγκυρη": r"πλατ(?:ιά|ύ)\s+αλλά\s+έγκυρ(?:η|ο)",
+    "Πολύ πλατιά/δευτερεύουσα": r"πολύ\s+πλατ(?:ιά|ύ)\s*/\s*δευτερεύ(?:ουσα|ον)",
+}
+
 ANGLE_NAMES = set(OPPOSITE_ANGLE.keys())  # {"Ωροσκόπος", "Μεσουράνημα"}
 
 _HOUSE_PATTERNS = [
@@ -61,6 +98,8 @@ class ValidationResult:
     missing_from_appendix: list = field(default_factory=list)
     missing_sections: list = field(default_factory=list)
     missing_per_house: list = field(default_factory=list)    # (house_number, aspect) -- κανόνας 6Β
+    wrong_aspect_type: list = field(default_factory=list)
+    wrong_weight: list = field(default_factory=list)
 
     def summary(self) -> str:
         if self.ok:
@@ -78,6 +117,10 @@ class ValidationResult:
             parts.append(f"λείπουν οι ενότητες: {', '.join(self.missing_sections)}")
         if self.missing_per_house:
             parts.append(f"{len(self.missing_per_house)} όψεις κυβερνήτη λείπουν από συγκεκριμένο Οίκο (κανόνας 6Β)")
+        if self.wrong_aspect_type:
+            parts.append(f"{len(self.wrong_aspect_type)} όψεις έχουν λανθασμένο ή απόντα τύπο")
+        if self.wrong_weight:
+            parts.append(f"{len(self.wrong_weight)} όψεις έχουν λανθασμένη ή απούσα κατηγορία βαρύτητας")
         return "Η ανάλυση δεν ολοκληρώθηκε: " + "· ".join(parts) + "."
 
     def details_lines(self) -> list[str]:
@@ -94,6 +137,10 @@ class ValidationResult:
             lines.append(f"Λείπει η υποχρεωτική ενότητα: «{s}».")
         for house_n, a in self.missing_per_house:
             lines.append(f"Οίκος {house_n}: η όψη {a.first}–{a.second} (orb {a.orb_text}) δεν αναφέρεται μέσα σε αυτόν τον Οίκο, παρότι εμπλέκει πλανήτη/κυβερνήτη του.")
+        for a in self.wrong_aspect_type:
+            lines.append(f"{a.first}–{a.second}: αναμενόταν «{a.aspect}» μαζί με orb {a.orb_text}, αλλά ο σωστός τύπος δεν εντοπίστηκε κοντά στο ζεύγος.")
+        for a in self.wrong_weight:
+            lines.append(f"{a.first}–{a.second}: αναμενόταν βαρύτητα «{a.weight}» μαζί με orb {a.orb_text}, αλλά δεν εντοπίστηκε κοντά στο ζεύγος.")
         return lines
 
 
@@ -102,20 +149,65 @@ def _find_appendix(text: str) -> str:
     return text[idx:] if idx != -1 else ""
 
 
-def _co_occurs_with_orb(text: str, name_a: str, name_b: str, orb_text: str) -> tuple[bool, bool]:
-    """Επιστρέφει (co_occurs, orb_found_nearby)."""
+def _name_pattern(name: str) -> str:
+    return _NAME_FORMS.get(name, re.escape(name))
+
+
+def _co_occurs_with_orb(text: str, name_a: str, name_b: str, orb_text: str,
+                        aspect_type: str | None = None,
+                        weight: str | None = None) -> tuple[bool, bool, bool, bool]:
+    """Επιστρέφει παρουσία ζεύγους, orb, σωστού τύπου και σωστής βαρύτητας."""
     co_occurs = False
     orb_found = False
-    for m in re.finditer(re.escape(name_a), text):
+    type_found = False
+    weight_found = False
+    pa, pb = _name_pattern(name_a), _name_pattern(name_b)
+    for m in re.finditer(pa, text, re.IGNORECASE):
         start = max(0, m.start() - _WINDOW)
         end = min(len(text), m.end() + _WINDOW)
         window = text[start:end]
-        if name_b in window:
+        if re.search(pb, window, re.IGNORECASE):
             co_occurs = True
             if orb_text in window:
                 orb_found = True
-                break
-    return co_occurs, orb_found
+                if aspect_type:
+                    type_found = bool(re.search(_ASPECT_FORMS.get(aspect_type, re.escape(aspect_type)), window, re.IGNORECASE))
+                else:
+                    type_found = True
+                if weight:
+                    weight_found = bool(re.search(_WEIGHT_FORMS.get(weight, re.escape(weight)), window, re.IGNORECASE))
+                else:
+                    weight_found = True
+                if type_found and weight_found:
+                    break
+    return co_occurs, orb_found, type_found, weight_found
+
+
+def _contradicts_aspect(text: str, aspect) -> tuple[bool, bool]:
+    """Εντοπίζει ρητή λάθος μεταγραφή του τύπου ή της βαρύτητας.
+
+    Εξετάζει κάθε παράγραφο/γραμμή αυτόνομα, ώστε μια σωστή αναφορά σε άλλον
+    Οίκο να μην κρύβει ένα λάθος στην τελική σύνθεση. Αν το ζεύγος υπάρχει
+    αλλά δεν δηλώνεται καθόλου τύπος ή βαρύτητα, δεν θεωρείται αντίφαση.
+    """
+    pa, pb = _name_pattern(aspect.first), _name_pattern(aspect.second)
+    expected_type = _ASPECT_FORMS.get(aspect.aspect, re.escape(aspect.aspect))
+    expected_weight = _WEIGHT_FORMS.get(aspect.weight, re.escape(aspect.weight))
+    any_type = "(?:" + "|".join(_ASPECT_FORMS.values()) + ")"
+    any_weight = "(?:" + "|".join(_WEIGHT_FORMS.values()) + ")"
+    wrong_type = False
+    wrong_weight = False
+    joined = rf"(?:{pa}\s*[–—-]\s*{pb}|{pb}\s*[–—-]\s*{pa})"
+    for unit in re.split(r"[\r\n]+", text):
+        for pair_match in re.finditer(joined, unit, re.IGNORECASE):
+            start = max(0, pair_match.start() - 45)
+            end = min(len(unit), pair_match.end() + 100)
+            fragment = unit[start:end]
+            if re.search(any_type, fragment, re.IGNORECASE) and not re.search(expected_type, fragment, re.IGNORECASE):
+                wrong_type = True
+            if re.search(any_weight, fragment, re.IGNORECASE) and not re.search(expected_weight, fragment, re.IGNORECASE):
+                wrong_weight = True
+    return wrong_type, wrong_weight
 
 
 def _house_segments(text: str) -> dict[int, str]:
@@ -176,18 +268,30 @@ def validate_analysis(chart, analysis_text: str) -> ValidationResult:
 
     missing_aspects = []
     suspect_aspects = []
+    wrong_aspect_type = []
+    wrong_weight = []
     for a in mandatory:
-        co_occurs, orb_ok = _co_occurs_with_orb(text, a.first, a.second, a.orb_text)
+        co_occurs, orb_ok, type_ok, weight_ok = _co_occurs_with_orb(
+            text, a.first, a.second, a.orb_text, a.aspect, a.weight
+        )
         if not co_occurs:
             missing_aspects.append(a)
         elif not orb_ok:
             suspect_aspects.append(a)
+        else:
+            if not type_ok:
+                wrong_aspect_type.append(a)
+            if not weight_ok:
+                wrong_weight.append(a)
 
     appendix_text = _find_appendix(text)
     missing_from_appendix = []
     if appendix_text:
-        for a in mandatory:
-            if a.first not in appendix_text or a.second not in appendix_text:
+        for a in chart.aspects:
+            co_occurs, orb_ok, type_ok, weight_ok = _co_occurs_with_orb(
+                appendix_text, a.first, a.second, a.orb_text, a.aspect, a.weight
+            )
+            if not (co_occurs and orb_ok and type_ok and weight_ok):
                 missing_from_appendix.append(a)
 
     missing_sections = [s for s in REQUIRED_SECTIONS if s not in text]
@@ -205,11 +309,25 @@ def validate_analysis(chart, analysis_text: str) -> ValidationResult:
         for a in mandatory:
             if a.first not in involved and a.second not in involved:
                 continue
-            co_occurs, orb_ok = _co_occurs_with_orb(segment, a.first, a.second, a.orb_text)
+            co_occurs, orb_ok, type_ok, weight_ok = _co_occurs_with_orb(
+                segment, a.first, a.second, a.orb_text, a.aspect, a.weight
+            )
             if not (co_occurs and orb_ok):
                 missing_per_house.append((house_number, a))
 
+    # Έλεγχος συνέπειας ΟΛΩΝ των αναφερόμενων όψεων, όχι μόνο των
+    # υποχρεωτικών τετραγώνων/αντιθέσεων. Έτσι εντοπίζεται, για παράδειγμα,
+    # λάθος κατηγορία σε σύνοδο Ήλιου–Άρη ή λάθος τύπος σε τελική σύνθεση.
+    for a in chart.aspects:
+        bad_type, bad_weight = _contradicts_aspect(text, a)
+        if bad_type and a not in wrong_aspect_type:
+            wrong_aspect_type.append(a)
+        if bad_weight and a not in wrong_weight:
+            wrong_weight.append(a)
+
     ok = not (missing_houses or missing_aspects or suspect_aspects
-              or missing_from_appendix or missing_sections or missing_per_house)
+              or missing_from_appendix or missing_sections or missing_per_house
+              or wrong_aspect_type or wrong_weight)
     return ValidationResult(ok, missing_houses, missing_aspects, suspect_aspects,
-                             missing_from_appendix, missing_sections, missing_per_house)
+                             missing_from_appendix, missing_sections, missing_per_house,
+                             wrong_aspect_type, wrong_weight)
