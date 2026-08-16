@@ -5,7 +5,7 @@ from prompts import build_master_prompt, fmt
 from docx_builder import build_audit_docx, build_analysis_docx
 from generator import generate_analysis
 from reference_loader import docx_text, load_default_references
-from astrology import movement_text
+from astrology import movement_text, OPPOSITE_ANGLE
 from validator import validate_analysis
 
 st.set_page_config(page_title="AstroCheck Pro", page_icon="✦", layout="wide")
@@ -57,7 +57,12 @@ with tab2:
     if not chart: st.warning("Πρώτα ανέβασε και έλεγξε το PDF στην καρτέλα 1.")
     else:
         hard=[a for a in chart.aspects if a.aspect in ('Τετράγωνο','Αντίθεση')]
-        a,b,c,d=st.columns(4); a.metric("Πλανήτες/σημεία",len(chart.points)); b.metric("Ακμές",len(chart.cusps)); c.metric("Όψεις Astrodienst",len(chart.aspects)); d.metric("Τετράγωνα/αντιθέσεις",len(hard))
+        # Ο validator (κανόνας 6Β) απαιτεί υποχρεωτικά και τις συνόδους με τις
+        # γωνίες (Ωροσκόπος/Μεσουράνημα) -- π.χ. η σύνοδος Χείρωνα-Ωροσκόπου.
+        # Πριν εμφανίζονταν μόνο τετράγωνα/αντιθέσεις εδώ, οπότε ο χρήστης δεν
+        # είχε τρόπο να τις επιβεβαιώσει οπτικά, ενώ ο validator τις απαιτούσε.
+        angle_conjunctions=[a for a in chart.aspects if a.aspect=='Σύνοδος' and (a.first in OPPOSITE_ANGLE or a.second in OPPOSITE_ANGLE)]
+        a,b,c,d,e=st.columns(5); a.metric("Πλανήτες/σημεία",len(chart.points)); b.metric("Ακμές",len(chart.cusps)); c.metric("Όψεις Astrodienst",len(chart.aspects)); d.metric("Τετράγωνα/αντιθέσεις",len(hard)); e.metric("Σύνοδοι με γωνίες",len(angle_conjunctions))
         if chart.warnings:
             for w in chart.warnings: st.markdown(f'<div class="warn">⚠ {w}</div>',unsafe_allow_html=True)
         else: st.markdown('<div class="ok">✓ Αναγνωρίστηκαν 12 ακμές και ο πίνακας δυναμικών όψεων.</div>',unsafe_allow_html=True)
@@ -67,6 +72,11 @@ with tab2:
             st.dataframe(pd.DataFrame([{"Σημείο":p.name,"Θέση":fmt(p),"Οίκος":p.house,"Κίνηση":movement_text(p)} for p in chart.points]),use_container_width=True,hide_index=True)
         st.subheader("Υποχρεωτικά τετράγωνα και αντιθέσεις")
         st.dataframe(pd.DataFrame([{"Ζεύγος":f"{x.first}–{x.second}","Όψη":x.aspect,"Orb":x.orb_text,"Βαρύτητα":x.weight,"Πηγή":x.source} for x in hard]),use_container_width=True,hide_index=True)
+        st.subheader("Υποχρεωτικές σύνοδοι με γωνίες (Ωροσκόπος/Μεσουράνημα)")
+        if angle_conjunctions:
+            st.dataframe(pd.DataFrame([{"Ζεύγος":f"{x.first}–{x.second}","Όψη":x.aspect,"Orb":x.orb_text,"Βαρύτητα":x.weight,"Πηγή":x.source} for x in angle_conjunctions]),use_container_width=True,hide_index=True)
+        else:
+            st.caption("Καμία σύνοδος πλανήτη/σημείου με τον Ωροσκόπο ή το Μεσουράνημα σε αυτόν τον χάρτη.")
         confirm=st.checkbox("Επιβεβαίωσα οπτικά ότι οι γραμμές συμφωνούν με τον πίνακα Astrodienst",key='confirmed')
         if not confirm: st.caption("Η τελική δημιουργία θα παραμείνει κλειδωμένη μέχρι την επιβεβαίωση.")
 

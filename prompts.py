@@ -76,6 +76,11 @@ def house_section(chart, number):
 def build_master_prompt(chart, personal, language, instructions_text, style_text,
                         instructions_name="Ενσωματωμένες οδηγίες v4",
                         style_name="Ενσωματωμένο πρότυπο Έλενας"):
+    # Το διορθωμένο όνομα (name_override στο tab3) είναι η πηγή αλήθειας όταν
+    # δίνεται· το chart.name (ωμή εξαγωγή από το PDF) είναι μόνο fallback.
+    # Πριν, η επικεφαλίδα έγραφε πάντα {chart.name} ενώ το ΠΡΟΣΩΠΙΚΟ ΠΛΑΙΣΙΟ
+    # παρακάτω έδειχνε το διορθωμένο -- τα δύο μπορούσαν να διαφωνούν.
+    display_name = (personal.get("Όνομα") or "").strip() or chart.name
     personal_text="\n".join(f"- {k}: {v}" for k,v in personal.items() if v) or "- Δεν δόθηκαν ακόμη προσωπικές πληροφορίες. Ζήτησε τες πριν από τη συγγραφή."
     aspect_appendix="\n".join(f"- {a.first}–{a.second}: {a.aspect}, orb {a.orb_text}, {a.weight}, {a.source}" for a in chart.aspects) or "- Δεν αναγνωρίστηκαν όψεις. Σταμάτησε και ζήτησε έλεγχο."
     houses="\n\n".join(house_section(chart,i) for i in range(1,13))
@@ -86,7 +91,7 @@ def build_master_prompt(chart, personal, language, instructions_text, style_text
 Το κείμενο του προτύπου Έλενας περιέχει στοιχεία άλλου προσώπου. Απαγορεύεται να αντιγράψεις από αυτό ονόματα, ημερομηνίες, οικογενειακά ή επαγγελματικά στοιχεία, πλανητικές θέσεις, Οίκους, όψεις ή συμπεράσματα. Χρησιμοποίησέ το μόνο για τον τρόπο οργάνωσης και ανάπτυξης του λόγου. Σε περίπτωση σύγκρουσης υπερισχύουν οι οδηγίες v4 και τα ελεγμένα δεδομένα του νέου χάρτη.
 
 Γλώσσα τελικού Word: {language}.
-Όνομα: {chart.name}
+Όνομα: {display_name}
 Ημερομηνία: {chart.date} · Ώρα: {chart.time} · Τόπος: {chart.place}
 Σύστημα Οίκων: {chart.house_system}
 
