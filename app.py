@@ -10,12 +10,13 @@ from validator import validate_analysis
 
 st.set_page_config(page_title="AstroCheck Pro", page_icon="✦", layout="wide")
 st.markdown("""<style>
-.stApp{background:#f5f7f3}.block-container{max-width:1180px;padding-top:2rem}.hero{background:#19332f;color:white;border-radius:22px;padding:30px 34px;margin-bottom:18px}.hero h1{margin:0 0 8px;font-family:Georgia;font-size:42px}.hero p{color:#dce8e2}.ok{padding:14px 16px;background:#e5f2e7;border-left:5px solid #39704c;border-radius:8px}.warn{padding:14px 16px;background:#fff1dd;border-left:5px solid #b7791f;border-radius:8px}div[data-testid="stMetric"]{background:white;border:1px solid #dce4df;padding:12px;border-radius:12px}</style>""",unsafe_allow_html=True)
-st.markdown('<div class="hero"><h1>AstroCheck Pro</h1><p>Από το Astrodienst PDF σε ελεγμένα δεδομένα, πλήρεις οδηγίες και Word — με υποχρεωτική καταγραφή τετραγώνων και αντιθέσεων.</p></div>',unsafe_allow_html=True)
+.stApp{background:#f5f7f3}.block-container{max-width:1180px;padding-top:2rem}.hero{background:#19332f;color:white;border-radius:22px;padding:30px 34px;margin-bottom:18px}.hero h1{margin:0 0 8px;font-family:Georgia;font-size:42px}.hero p{color:#dce8e2}.ok{padding:14px 16px;background:#e5f2e7;border-left:5px solid #39704c;border-radius:8px}.warn{padding:14px 16px;background:#fff1dd;border-left:5px solid #b7791f;border-radius:8px}div[data-testid="stMetric"]{background:white;border:1px solid #dce4df;padding:12px;border-radius:12px}.step-done{color:#2f6b46;font-weight:600}.step-pending{color:#8a8f8c}.step-warn{color:#b7791f;font-weight:600}</style>""",unsafe_allow_html=True)
+st.markdown('<div class="hero"><h1>AstroCheck Pro</h1><p>Από το Astrodienst PDF σε ελεγμένα δεδομένα, πλήρεις οδηγίες και Word — με υποχρεωτική καταγραφή τετραγώνων, αντιθέσεων και συνόδων με γωνίες.</p></div>',unsafe_allow_html=True)
 
 if 'chart' not in st.session_state: st.session_state.chart=None
 if 'analysis' not in st.session_state: st.session_state.analysis=''
 if 'validation' not in st.session_state: st.session_state.validation=None
+if 'uploader_gen' not in st.session_state: st.session_state.uploader_gen=0  # αλλάζει τα keys των uploaders ώστε το "Νέα ανάλυση" να τους αδειάζει πραγματικά
 
 try:
     default_instructions_text, default_style_text = load_default_references()
@@ -23,29 +24,63 @@ except Exception as e:
     st.error(f"Σφάλμα ενσωματωμένων αρχείων: {e}")
     st.stop()
 
+chart_ready = st.session_state.chart is not None
+confirmed_ready = bool(st.session_state.get('confirmed', False))
+personal_extra_ready = any(st.session_state.get(k) for k in ('profession', 'family', 'projects', 'habits', 'experiences'))
+analysis_ok = bool(st.session_state.analysis) and st.session_state.validation is not None and st.session_state.validation.ok
+analysis_warn = bool(st.session_state.analysis) and st.session_state.validation is not None and not st.session_state.validation.ok
+
 with st.sidebar:
     st.header("Πρόοδος")
-    st.write("1. PDF και αρχεία")
-    st.write("2. Μαθηματικός έλεγχος")
-    st.write("3. Προσωπικό πλαίσιο")
-    st.write("4. Δημιουργία")
+
+    def _step(label, done, warn=False, optional_note=None):
+        if warn:
+            st.markdown(f'<span class="step-warn">⚠ {label}</span>', unsafe_allow_html=True)
+        elif done:
+            st.markdown(f'<span class="step-done">✓ {label}</span>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<span class="step-pending">○ {label}</span>', unsafe_allow_html=True)
+            if optional_note:
+                st.caption(optional_note)
+
+    _step("1. PDF και αρχεία", chart_ready)
+    _step("2. Μαθηματικός έλεγχος", confirmed_ready)
+    _step("3. Προσωπικό πλαίσιο", personal_extra_ready, optional_note="προαιρετικό, αλλά κάνει την ανάλυση πιο βιωματική")
+    _step("4. Δημιουργία & έλεγχος πληρότητας", analysis_ok, warn=analysis_warn)
+
+    st.divider()
     st.caption("Τα δεδομένα επεξεργάζονται στη συνεδρία και δεν αποθηκεύονται από την εφαρμογή.")
+    if st.button("🔄 Νέα ανάλυση (καθαρισμός όλων)", use_container_width=True,
+                 help="Καθαρίζει χάρτη, προσωπικό πλαίσιο και ανάλυση, ώστε να ξεκινήσεις καθαρά με το επόμενο άτομο."):
+        st.session_state.chart = None
+        st.session_state.analysis = ''
+        st.session_state.validation = None
+        st.session_state.uploader_gen += 1  # αναγκάζει τους file_uploader να ξαναγίνουν "άδειοι"
+        for k in ('confirmed', 'profession', 'family', 'projects', 'habits', 'experiences', 'pasted_analysis'):
+            st.session_state.pop(k, None)
+        st.rerun()
 
 tab1,tab2,tab3,tab4,tab5=st.tabs(["1 · Αρχεία","2 · Έλεγχος","3 · Προσωπικό πλαίσιο","4 · Δημιουργία","5 · Λήψη Word"])
 
 with tab1:
     st.subheader("Ανέβασε μόνο το νέο PDF")
     st.success("✓ Οι οδηγίες v4 και το πρότυπο της Έλενας είναι μόνιμα ενσωματωμένα.")
-    pdf=st.file_uploader("Νέο Astrodienst Data Sheet",type=['pdf'],key='pdf')
+    pdf=st.file_uploader("Νέο Astrodienst Data Sheet",type=['pdf'],key=f"pdf_{st.session_state.uploader_gen}")
     with st.expander("Προχωρημένα: προαιρετική προσωρινή αντικατάσταση"):
-        instructions=st.file_uploader("Νεότερες οδηγίες",type=['docx'],key='instructions')
-        style=st.file_uploader("Νεότερο πρότυπο ύφους",type=['docx'],key='style')
+        instructions=st.file_uploader("Νεότερες οδηγίες",type=['docx'],key=f"instructions_{st.session_state.uploader_gen}")
+        style=st.file_uploader("Νεότερο πρότυπο ύφους",type=['docx'],key=f"style_{st.session_state.uploader_gen}")
     if pdf and st.button("Ανάγνωση και έλεγχος PDF",type="primary",use_container_width=True):
-        try:
-            st.session_state.chart=parse_astrodienst_pdf(pdf.getvalue(),pdf.name)
-            st.session_state.analysis=''
-            st.success("Το PDF διαβάστηκε. Συνέχισε στην καρτέλα «2 · Έλεγχος».")
-        except Exception as e: st.error(f"Η ανάγνωση σταμάτησε με ασφάλεια: {e}")
+        with st.spinner("Διαβάζεται το PDF…"):
+            try:
+                st.session_state.chart=parse_astrodienst_pdf(pdf.getvalue(),pdf.name)
+                st.session_state.analysis=''
+                st.session_state.validation=None
+                st.success("✓ Το PDF διαβάστηκε. Συνέχισε στην καρτέλα «2 · Έλεγχος» →")
+            except Exception as e:
+                st.error("Η ανάγνωση σταμάτησε με ασφάλεια — το PDF μπορεί να μην είναι το σωστό Astrodienst Data Sheet, ή η μορφή του διαφέρει.")
+                with st.expander("Τεχνική λεπτομέρεια"): st.code(str(e))
+    if st.session_state.chart and not pdf:
+        st.info(f"Ήδη ελεγμένος χάρτης στη συνεδρία: **{st.session_state.chart.name}**. Ανέβασε νέο PDF μόνο αν θέλεις να τον αντικαταστήσεις, ή πάτα «🔄 Νέα ανάλυση» στο πλάι.")
 
 instructions_text = docx_text(instructions.getvalue()) if instructions else default_instructions_text
 style_text = docx_text(style.getvalue()) if style else default_style_text
@@ -77,18 +112,20 @@ with tab2:
             st.dataframe(pd.DataFrame([{"Ζεύγος":f"{x.first}–{x.second}","Όψη":x.aspect,"Orb":x.orb_text,"Βαρύτητα":x.weight,"Πηγή":x.source} for x in angle_conjunctions]),use_container_width=True,hide_index=True)
         else:
             st.caption("Καμία σύνοδος πλανήτη/σημείου με τον Ωροσκόπο ή το Μεσουράνημα σε αυτόν τον χάρτη.")
-        confirm=st.checkbox("Επιβεβαίωσα οπτικά ότι οι γραμμές συμφωνούν με τον πίνακα Astrodienst",key='confirmed')
-        if not confirm: st.caption("Η τελική δημιουργία θα παραμείνει κλειδωμένη μέχρι την επιβεβαίωση.")
+        confirm=st.checkbox("Επιβεβαίωσα οπτικά ότι οι γραμμές παραπάνω συμφωνούν με τον πίνακα Astrodienst",key='confirmed')
+        if not confirm: st.caption("👉 Η καρτέλα «4 · Δημιουργία» θα παραμείνει κλειδωμένη μέχρι την επιβεβαίωση.")
+        else: st.markdown('<div class="ok">✓ Επιβεβαιώθηκε. Συνέχισε στην καρτέλα «3 · Προσωπικό πλαίσιο» →</div>',unsafe_allow_html=True)
 
 with tab3:
     st.subheader("Πληροφορίες που επιτρέπεται να χρησιμοποιηθούν")
-    name_override=st.text_input("Όνομα για το τελικό έγγραφο",value=chart.name if chart else "")
-    profession=st.text_input("Επάγγελμα και σπουδές")
-    family=st.text_input("Σχέσεις και οικογενειακή κατάσταση")
-    projects=st.text_area("Σημαντικά έργα, ενδιαφέροντα ή στόχοι")
-    habits=st.text_area("Εργασιακές συνήθειες και καθημερινότητα")
-    experiences=st.text_area("Εμπειρίες που θέλεις να ενσωματωθούν")
-    language=st.selectbox("Γλώσσα τελικής ανάλυσης",["Ελληνικά","Αγγλικά"])
+    st.caption("Προαιρετικό βήμα — μπορείς να προχωρήσεις με μόνο το όνομα. Ό,τι προσθέσεις εδώ κάνει την ανάλυση πιο βιωματική.")
+    name_override=st.text_input("Όνομα για το τελικό έγγραφο",value=chart.name if chart else "",key='name_override')
+    profession=st.text_input("Επάγγελμα και σπουδές",key='profession')
+    family=st.text_input("Σχέσεις και οικογενειακή κατάσταση",key='family')
+    projects=st.text_area("Σημαντικά έργα, ενδιαφέροντα ή στόχοι",key='projects')
+    habits=st.text_area("Εργασιακές συνήθειες και καθημερινότητα",key='habits')
+    experiences=st.text_area("Εμπειρίες που θέλεις να ενσωματωθούν",key='experiences')
+    language=st.selectbox("Γλώσσα τελικής ανάλυσης",["Ελληνικά","Αγγλικά"],key='language')
     st.caption("Ό,τι δεν γράψεις εδώ δεν πρέπει να παρουσιαστεί ως γνωστό προσωπικό γεγονός.")
 
 personal={"Όνομα":name_override,"Επάγγελμα και σπουδές":profession,"Οικογενειακή κατάσταση":family,"Έργα/ενδιαφέροντα":projects,"Εργασιακές συνήθειες":habits,"Εμπειρίες":experiences}
@@ -98,57 +135,77 @@ if chart:
 
 with tab4:
     st.subheader("Δημιουργία πλήρους ανάλυσης")
-    if not chart: st.warning("Δεν υπάρχει ελεγμένος χάρτης.")
+    if not chart: st.warning("Δεν υπάρχει ελεγμένος χάρτης. Ξεκίνα από την καρτέλα «1 · Αρχεία».")
     else:
-        checklist={"12 ακμές":len(chart.cusps)==12,"Βόρειος Δεσμός":any(p.name=='Βόρειος Δεσμός' for p in chart.points),"Νότιος Δεσμός":any(p.name=='Νότιος Δεσμός' for p in chart.points),"Πίνακας όψεων":bool(chart.aspects),"Χειροκίνητη επιβεβαίωση":st.session_state.get('confirmed',False),"Οδηγίες v4 μόνιμα ενσωματωμένες":bool(instructions_text),"Πρότυπο Έλενας μόνιμα ενσωματωμένο":bool(style_text)}
-        st.dataframe(pd.DataFrame([{"Έλεγχος":k,"Κατάσταση":"✓" if v else "Λείπει"} for k,v in checklist.items()]),use_container_width=True,hide_index=True)
-        with st.expander("Προεπισκόπηση πλήρους εντολής"): st.text_area("",prompt,height=320,label_visibility='collapsed')
-        st.download_button("Λήψη πλήρους εντολής (.txt)",prompt,file_name="AstroCheck_Master_Prompt.txt",use_container_width=True)
-        api=st.text_input("Προαιρετικά: OpenAI API key για αυτόματη συγγραφή",type="password",help="Δεν αποθηκεύεται. Χωρίς κλειδί κατεβάζεις την πλήρη εντολή και τη χρησιμοποιείς στο ChatGPT.")
+        checklist={"12 ακμές":len(chart.cusps)==12,"Βόρειος Δεσμός":any(p.name=='Βόρειος Δεσμός' for p in chart.points),"Νότιος Δεσμός":any(p.name=='Νότιος Δεσμός' for p in chart.points),"Πίνακας όψεων":bool(chart.aspects),"Χειροκίνητη επιβεβαίωση (καρτέλα 2)":st.session_state.get('confirmed',False),"Οδηγίες v4 μόνιμα ενσωματωμένες":bool(instructions_text),"Πρότυπο Έλενας μόνιμα ενσωματωμένο":bool(style_text)}
         ready=all(checklist.values())
-        if st.button("Δημιουργία πλήρους ανάλυσης",type="primary",disabled=not ready or not api,use_container_width=True):
-            with st.spinner("Δημιουργείται η ανάλυση των 12 Οίκων…"):
-                try:
-                    text=generate_analysis(api,prompt)
-                    st.session_state.analysis=text
-                    st.session_state.validation=validate_analysis(chart,text)
-                    if st.session_state.validation.ok:
-                        st.success("Η ανάλυση δημιουργήθηκε και πέρασε τον έλεγχο πληρότητας. Πήγαινε στην καρτέλα 5.")
-                    else:
-                        st.error(st.session_state.validation.summary()+" Δες λεπτομέρειες στην καρτέλα 5. Η λήψη του Word παραμένει κλειδωμένη.")
-                except Exception as e: st.error(f"Η δημιουργία απέτυχε: {e}")
-        if not ready: st.warning("Η αυτόματη δημιουργία παραμένει κλειδωμένη μέχρι να ολοκληρωθούν όλοι οι έλεγχοι.")
+        with st.expander("Λίστα ελέγχου πριν τη δημιουργία", expanded=not ready):
+            st.dataframe(pd.DataFrame([{"Έλεγχος":k,"Κατάσταση":"✓" if v else "Λείπει"} for k,v in checklist.items()]),use_container_width=True,hide_index=True)
+        with st.expander("Προεπισκόπηση πλήρους εντολής"): st.text_area("",prompt,height=320,label_visibility='collapsed')
+        st.download_button("⬇️ Λήψη πλήρους εντολής (.txt)",prompt,file_name="AstroCheck_Master_Prompt.txt",use_container_width=True)
+
+        if not ready:
+            st.markdown('<div class="warn">⚠ Η αυτόματη δημιουργία παραμένει κλειδωμένη μέχρι να ολοκληρωθούν όλοι οι έλεγχοι παραπάνω (κυρίως η επιβεβαίωση στην καρτέλα 2).</div>',unsafe_allow_html=True)
 
         st.divider()
-        st.subheader("Ή: επικόλλησε ανάλυση που πήρες χειροκίνητα (π.χ. από ChatGPT)")
-        st.caption("Κατέβασες την πλήρη εντολή παραπάνω, τη χρησιμοποίησες αλλού, και έχεις το κείμενο; Επικόλλησέ το εδώ για τον ΙΔΙΟ αυτόματο έλεγχο πληρότητας πριν φτιαχτεί το Word.")
-        pasted=st.text_area("Επικολλημένη ανάλυση",height=200,key='pasted_analysis')
-        if st.button("Έλεγχος πληρότητας επικολλημένου κειμένου",use_container_width=True,disabled=not pasted):
-            st.session_state.analysis=pasted
-            st.session_state.validation=validate_analysis(chart,pasted)
-            if st.session_state.validation.ok:
-                st.success("Πέρασε τον έλεγχο πληρότητας. Πήγαινε στην καρτέλα 5.")
-            else:
-                st.error(st.session_state.validation.summary()+" Δες λεπτομέρειες στην καρτέλα 5.")
+        col_auto, col_manual = st.columns(2)
+
+        with col_auto:
+            with st.container(border=True):
+                st.markdown("#### 🤖 Αυτόματη δημιουργία")
+                st.caption("Χρειάζεται δικό σου OpenAI API key. Δεν αποθηκεύεται πουθενά.")
+                api=st.text_input("OpenAI API key",type="password",label_visibility='collapsed',placeholder="sk-...")
+                if st.button("Δημιουργία πλήρους ανάλυσης",type="primary",disabled=not ready or not api,use_container_width=True):
+                    with st.spinner("Δημιουργείται η ανάλυση των 12 Οίκων…"):
+                        try:
+                            text=generate_analysis(api,prompt)
+                            st.session_state.analysis=text
+                            st.session_state.validation=validate_analysis(chart,text)
+                            if st.session_state.validation.ok:
+                                st.success("✓ Πέρασε τον έλεγχο πληρότητας. Πήγαινε στην καρτέλα 5 →")
+                            else:
+                                st.error(st.session_state.validation.summary()+" Δες λεπτομέρειες στην καρτέλα 5. Η λήψη του Word παραμένει κλειδωμένη.")
+                        except Exception as e:
+                            st.error("Η δημιουργία απέτυχε.")
+                            with st.expander("Τεχνική λεπτομέρεια"): st.code(str(e))
+                if not ready:
+                    st.caption("Κλειδωμένο μέχρι να ολοκληρωθεί η λίστα ελέγχου παραπάνω.")
+
+        with col_manual:
+            with st.container(border=True):
+                st.markdown("#### 📋 Χειροκίνητη διαδρομή")
+                st.caption("Κατέβασε την εντολή (.txt) παραπάνω, χρησιμοποίησέ την σε ChatGPT/Claude, και επικόλλησε το αποτέλεσμα εδώ.")
+                pasted=st.text_area("Επικολλημένη ανάλυση",height=150,key='pasted_analysis',label_visibility='collapsed',placeholder="Επικόλλησε εδώ το πλήρες κείμενο της ανάλυσης…")
+                if st.button("Έλεγχος πληρότητας επικολλημένου κειμένου",use_container_width=True,disabled=not pasted):
+                    st.session_state.analysis=pasted
+                    st.session_state.validation=validate_analysis(chart,pasted)
+                    if st.session_state.validation.ok:
+                        st.success("✓ Πέρασε τον έλεγχο πληρότητας. Πήγαινε στην καρτέλα 5 →")
+                    else:
+                        st.error(st.session_state.validation.summary()+" Δες λεπτομέρειες στην καρτέλα 5.")
 
 with tab5:
     st.subheader("Λήψη αρχείων")
     if chart:
         audit=build_audit_docx(chart,personal,prompt)
-        st.download_button("Λήψη δελτίου ελέγχου και πλήρους εντολής (Word)",audit,file_name="AstroCheck_Elegxos_kai_Odigies.docx",use_container_width=True)
+        st.download_button("⬇️ Λήψη δελτίου ελέγχου και πλήρους εντολής (Word)",audit,file_name="AstroCheck_Elegxos_kai_Odigies.docx",use_container_width=True)
     if st.session_state.analysis:
-        st.text_area("Προεπισκόπηση ανάλυσης",st.session_state.analysis,height=420)
+        with st.expander("Προεπισκόπηση ανάλυσης"):
+            st.text_area("",st.session_state.analysis,height=420,label_visibility='collapsed')
         validation=st.session_state.validation
         if validation is None:
             validation=validate_analysis(chart,st.session_state.analysis)
             st.session_state.validation=validation
+        st.subheader("Μηχανικός έλεγχος πληρότητας")
         if validation.ok:
             st.markdown(f'<div class="ok">{validation.summary()}</div>',unsafe_allow_html=True)
             final_doc=build_analysis_docx(name_override or chart.name,st.session_state.analysis)
-            st.download_button("Λήψη πλήρους ανάλυσης (Word)",final_doc,file_name="Pliris_Astrologiki_Analysi.docx",type="primary",use_container_width=True)
+            st.download_button("⬇️ Λήψη πλήρους ανάλυσης (Word)",final_doc,file_name="Pliris_Astrologiki_Analysi.docx",type="primary",use_container_width=True)
         else:
             st.markdown(f'<div class="warn">⚠ {validation.summary()}</div>',unsafe_allow_html=True)
             with st.expander("Λεπτομέρειες ελέγχου πληρότητας",expanded=True):
                 for line in validation.details_lines(): st.write("•",line)
+            st.caption("Διόρθωσε το κείμενο στην πηγή του (ChatGPT/Claude/API) και ξαναπέρασέ το από την καρτέλα 4.")
             st.button("Λήψη πλήρους ανάλυσης (Word) — κλειδωμένο μέχρι να διορθωθεί η ανάλυση",disabled=True,use_container_width=True)
-    else: st.info("Μετά την αυτόματη δημιουργία (ή τον χειροκίνητο έλεγχο επικολλημένου κειμένου στην καρτέλα 4) θα εμφανιστεί εδώ το τελικό Word.")
+    else:
+        st.info("Μετά την αυτόματη δημιουργία ή τον χειροκίνητο έλεγχο επικολλημένου κειμένου στην καρτέλα 4, θα εμφανιστεί εδώ το τελικό Word.")
