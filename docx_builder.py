@@ -31,6 +31,22 @@ def _add_formatted_runs(paragraph, text):
         else:
             paragraph.add_run(chunk)
 
+def _add_multiline(doc, text):
+    """Προσθέτει το `text` ως ένα Word paragraph ανά γραμμή.
+
+    Το python-docx (και το OOXML γενικότερα) ΔΕΝ μετατρέπει ένα literal '\\n'
+    μέσα σε run σε ορατή αλλαγή γραμμής -- το Word δείχνει ένα συνεχόμενο
+    μπλοκ κειμένου. Το build_audit_docx καλούσε d.add_paragraph(prompt) μία
+    φορά με ολόκληρη την πολυσέλιδη εντολή (όλοι οι 12 Οίκοι, οι πλήρεις
+    οδηγίες v4, το πρότυπο ύφους) ως ένα string, οπότε έβγαινε ένα άμορφο
+    μπλοκ ~88.000 χαρακτήρων χωρίς ορατά όρια ενοτήτων. Εδώ σπάει σε πραγματικές
+    γραμμές πρώτα, ώστε κάθε γραμμή -- ακόμη και οι κενές, που γίνονται κενά
+    paragraphs -- να είναι δικό της paragraph, όπως ακριβώς η υπόλοιπη δομή
+    αυτού του εγγράφου.
+    """
+    for line in text.splitlines():
+        doc.add_paragraph(line)
+
 def build_audit_docx(chart, personal, prompt):
     d=Document(); sec=d.sections[0]; sec.top_margin=Inches(.7); sec.bottom_margin=Inches(.7); sec.left_margin=Inches(.75); sec.right_margin=Inches(.75)
     styles=d.styles
@@ -54,7 +70,8 @@ def build_audit_docx(chart, personal, prompt):
     for i,h in enumerate(['Ζεύγος','Όψη','Orb','Βαρύτητα']): t.rows[0].cells[i].text=h; _shade(t.rows[0].cells[i],'1D3A34'); t.rows[0].cells[i].paragraphs[0].runs[0].font.color.rgb=RGBColor(255,255,255)
     for a in hard:
         c=t.add_row().cells; c[0].text=f'{a.first}–{a.second}'; c[1].text=a.aspect; c[2].text=a.orb_text; c[3].text=a.weight
-    d.add_page_break(); d.add_heading('Πλήρης εντολή για δημιουργία ανάλυσης',1); d.add_paragraph(prompt)
+    d.add_page_break(); d.add_heading('Πλήρης εντολή για δημιουργία ανάλυσης',1)
+    _add_multiline(d, prompt)
     bio=BytesIO(); d.save(bio); return bio.getvalue()
 
 def build_analysis_docx(title_name, analysis):
