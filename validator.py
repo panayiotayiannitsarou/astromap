@@ -200,23 +200,65 @@ def _contradicts_aspect(text: str, aspect) -> tuple[bool, bool]:
     Εξετάζει κάθε παράγραφο/γραμμή αυτόνομα, ώστε μια σωστή αναφορά σε άλλον
     Οίκο να μην κρύβει ένα λάθος στην τελική σύνθεση. Αν το ζεύγος υπάρχει
     αλλά δεν δηλώνεται καθόλου τύπος ή βαρύτητα, δεν θεωρείται αντίφαση.
+
+    v3: η αναζήτηση τύπου/βαρύτητας αγκυρώνεται πλέον στο πλησιέστερο orb
+    ΤΟΥ ΙΔΙΟΥ ζεύγους μέσα στο απόσπασμα -- όχι σε όλο το ευρύ παράθυρο γύρω
+    από το ζεύγος. Η παλιά v2 λογική έψαχνε "οποιαδήποτε άλλη κατηγορία/τύπο
+    στο παράθυρο" χωρίς να ξέρει σε ποιο ζεύγος ανήκε η λέξη που βρήκε, οπότε
+    μια πρόταση όπως «η στενή αντίθεση Α–Β..., ενώ το κανονικό τετράγωνο
+    Γ–Δ...» σήκωνε ψευδή αντίφαση για το Α–Β μόνο επειδή το «κανονικό» της
+    ΑΛΛΗΣ όψης έπεφτε μέσα στο παράθυρο. Τώρα, αν δεν βρεθεί το ακριβές orb
+    του ζεύγους κοντά, δεν βγάζουμε συμπέρασμα (όπως και πριν όταν έλειπε
+    τελείως τύπος/βαρύτητα). Επίσης εξαιρούνται οι τύποι που δηλώνουν τη
+    συμπληρωματική όψη άξονα («... ως τετράγωνο ...»), με την ίδια λογική
+    που ήδη χρησιμοποιεί η _strict_occurrence_errors.
     """
     pa, pb = _name_pattern(aspect.first), _name_pattern(aspect.second)
-    expected_type = _ASPECT_FORMS.get(aspect.aspect, re.escape(aspect.aspect))
-    expected_weight = _WEIGHT_FORMS.get(aspect.weight, re.escape(aspect.weight))
-    any_type = "(?:" + "|".join(_ASPECT_FORMS.values()) + ")"
-    any_weight = "(?:" + "|".join(_WEIGHT_FORMS.values()) + ")"
     wrong_type = False
     wrong_weight = False
     joined = rf"(?:{pa}\s*[–—-]\s*{pb}|{pb}\s*[–—-]\s*{pa})"
     for unit in re.split(r"[\r\n]+", text):
         for pair_match in re.finditer(joined, unit, re.IGNORECASE):
-            start = max(0, pair_match.start() - 45)
-            end = min(len(unit), pair_match.end() + 100)
+            start = max(0, pair_match.start() - 90)
+            end = min(len(unit), pair_match.end() + 220)
             fragment = unit[start:end]
-            if re.search(any_type, fragment, re.IGNORECASE) and not re.search(expected_type, fragment, re.IGNORECASE):
-                wrong_type = True
-            if re.search(any_weight, fragment, re.IGNORECASE) and not re.search(expected_weight, fragment, re.IGNORECASE):
+            pair_start = pair_match.start() - start
+            pair_end = pair_match.end() - start
+
+            orb_matches = list(re.finditer(re.escape(aspect.orb_text), fragment))
+            if not orb_matches:
+                # Δεν εντοπίστηκε το orb αυτού του ζεύγους κοντά -- δεν
+                # μπορούμε να αγκυρώσουμε με σιγουριά ποια λέξη ανήκει σε
+                # ποιον, άρα δεν σημαίνουμε αντίφαση από αυτή την εμφάνιση.
+                continue
+            orb = min(
+                orb_matches,
+                key=lambda m: min(abs(m.start() - pair_end), abs(m.end() - pair_start)),
+            )
+
+            type_labels = [
+                item for item in _matched_labels(fragment, _ASPECT_FORMS)
+                if not _is_mirrored_axis_type(fragment, item[1])
+            ]
+            if type_labels:
+                nearest_type = min(
+                    type_labels,
+                    key=lambda item: min(abs(item[1] - pair_end), abs(item[2] - pair_start)),
+                )[0]
+                if nearest_type != aspect.aspect:
+                    wrong_type = True
+
+            after_orb = fragment[orb.end():orb.end() + 95]
+            after_labels = _matched_labels(after_orb, _WEIGHT_FORMS)
+            if after_labels:
+                declared_weight = after_labels[0][0]
+            else:
+                all_weights = _matched_labels(fragment, _WEIGHT_FORMS)
+                declared_weight = min(
+                    all_weights,
+                    key=lambda item: min(abs(item[1] - orb.end()), abs(item[2] - orb.start())),
+                )[0] if all_weights else None
+            if declared_weight is not None and declared_weight != aspect.weight:
                 wrong_weight = True
     return wrong_type, wrong_weight
 
